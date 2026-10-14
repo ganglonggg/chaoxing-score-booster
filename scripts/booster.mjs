@@ -3,6 +3,7 @@ import { readFile, writeFile, appendFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchChrome, connectViaProfile, sleep } from './chrome-launcher.mjs';
+import { CDPProxyClient } from './cdp-client.mjs';
 
 const QUIZ_DOC_FN = `
 function findQuizDoc() {
@@ -51,6 +52,10 @@ export class QuizBooster {
 
   async connect() {
     await this.loadSession();
+    if (await CDPProxyClient.isAvailable()) {
+      this.cdp = new CDPProxyClient();
+      return this.cdp;
+    }
     try {
       this.cdp = await connectViaProfile(this.stateDir);
       return this.cdp;
@@ -66,38 +71,66 @@ export class QuizBooster {
     return { pages, plaza, study };
   }
 
-  async getScore(plazaTargetId) {
+  async getScore(plazaTargetId, previousScore = null) {
     if (!plazaTargetId) {
       const { plaza } = await this.getTabs();
       if (!plaza) throw new Error('Plaza tab not found');
       plazaTargetId = plaza.targetId;
     }
-    // Reload plaza page to ensure freshest points
-    await this.cdp.evaluate(plazaTargetId, 'location.reload()');
-    await sleep(2500);
 
-    const scoreInfo = await this.cdp.evaluate(plazaTargetId, `(()=>{
-      const text = document.body.innerText;
-      const totalM = text.match(/(\\d+)\\s*累计积分/);
-      const todayM = text.match(/(\\d+)\\s*今日积分/);
-      const daysM = text.match(/(\\d+)\\s*累计天数/);
-      return {
-        total: totalM ? Number(totalM[1]) : null,
-        today: todayM ? Number(todayM[1]) : null,
-        days: daysM ? Number(daysM[1]) : null,
-        title: document.title
-      };
-    })()`);
-    return scoreInfo;
+    const read = async () => {
+      try {
+        await this.cdp.evaluate(plazaTargetId, 'location.reload()');
+      } catch {}
+      await sleep(2500);
+
+      const scoreInfo = await this.cdp.evaluate(plazaTargetId, `(()=>{
+        const text = document.body.innerText;
+        const totalM = text.match(/(\\d+)\\s*累计积分/);
+        const todayM = text.match(/(\\d+)\\s*今日积分/);
+        const daysM = text.match(/(\\d+)\\s*累计天数/);
+        return {
+          total: totalM ? Number(totalM[1]) : null,
+          today: todayM ? Number(todayM[1]) : null,
+          days: daysM ? Number(daysM[1]) : null,
+          title: document.title
+        };
+      })()`);
+      return scoreInfo || { total: null, today: null, days: null };
+    };
+
+    let res = await read();
+    // If previousScore was provided and score hasn't refreshed on plaza, retry once after short delay
+    if (previousScore !== null && res.total !== null && res.total <= previousScore) {
+      await sleep(2000);
+      res = await read();
+    }
+    return res;
   }
+
 
   async init(url, chromePath = null) {
     await mkdir(this.stateDir, { recursive: true });
-    const { cdp, targetId, stateDir } = await launchChrome({
-      stateDir: this.stateDir,
-      url,
-      chromePath
-    });
+
+    let cdp, targetId;
+    if (await CDPProxyClient.isAvailable()) {
+      cdp = new CDPProxyClient();
+      const targets = await cdp.targets();
+      let target = targets.find(p => p.url.includes('/plaza/')) || targets.find(p => p.url.includes(url));
+      if (!target) {
+        const tid = await cdp.createTarget(url);
+        target = { targetId: tid, url };
+      }
+      targetId = target.targetId;
+    } else {
+      const res = await launchChrome({
+        stateDir: this.stateDir,
+        url,
+        chromePath
+      });
+      cdp = res.cdp;
+      targetId = res.targetId;
+    }
     this.cdp = cdp;
 
     // Check if user is logged in
@@ -490,13 +523,29 @@ export class QuizBooster {
             return qs.map((q, idx) => {
               const opts = [...q.querySelectorAll('li[role=radio], li[role=checkbox]')];
               const isRadio = q.querySelector('li[role=radio]') !== null;
+              const isCheckbox = q.querySelector('li[role=checkbox]') !== null;
+              let type = '未知题型';
+              if (isRadio) type = opts.length === 2 ? '判断题' : '单选题';
+              else if (isCheckbox) type = '多选题';
               return {
                 index: idx,
-                type: isRadio ? (opts.length === 2 ? '判断题' : '单选题') : '多选题',
+                type,
                 optionCount: opts.length
               };
             });
           })()`);
+
+          // If any question has 0 options (e.g. subjective/fill-in-the-blank), skip chapter safely
+          const hasUnsupported = questions.some(q => q.optionCount === 0);
+          if (hasUnsupported) {
+            process.stdout.write(`【提示】章节 ${quizStatus.title || chapterTitle || chapterId} 包含主观或非选择题型，自动跳过此章...\n`);
+            const adv = await this.advanceToNextChapter(studyTargetId);
+            if (!adv.success) {
+              return { status: 'NO_MORE_CHAPTERS', message: 'All course categories and chapters scanned.' };
+            }
+            if (adv.studyTargetId) studyTargetId = adv.studyTargetId;
+            continue;
+          }
 
           return {
             status: 'QUIZ_READY',
@@ -616,12 +665,25 @@ export class QuizBooster {
   }
 
   async step(answers) {
+    const session = await this.loadSession();
+    const previousScore = session.lastScore || null;
+
     // 1. Submit current quiz
     const subResult = await this.submitQuiz(answers);
     await sleep(1500);
 
-    // 2. Check plaza score
-    const score = await this.getScore(this.session?.plazaTargetId);
+    // 2. Check plaza score (with retry if score not yet updated)
+    const score = await this.getScore(this.session?.plazaTargetId, previousScore);
+
+    let consecutiveZeroGain = session.consecutiveZeroGain || 0;
+    if (score.total !== null && previousScore !== null) {
+      if (score.total <= previousScore) {
+        consecutiveZeroGain++;
+      } else {
+        consecutiveZeroGain = 0;
+      }
+    }
+    await this.saveSession({ lastScore: score.total, consecutiveZeroGain });
 
     // 3. Check if target reached
     if (score.total !== null && score.total >= this.targetScore) {
@@ -642,13 +704,19 @@ export class QuizBooster {
     }
 
     const next = await this.nextQuiz();
-    return {
+    const result = {
       status: next.status,
       currentScore: score.total,
       todayScore: score.today,
       remainingPoints: Math.max(0, this.targetScore - (score.total || 0)),
       nextQuiz: next
     };
+
+    if (consecutiveZeroGain >= 3) {
+      result.warning = `累计积分连续 ${consecutiveZeroGain} 节未发生增长（当前 ${score.total} 分）。可能该课程已触发【每日积分上限】或该题重复作答不计分。`;
+    }
+
+    return result;
   }
 
   async finish() {

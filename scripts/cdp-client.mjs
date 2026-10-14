@@ -18,6 +18,10 @@ export class CDPClient {
           const { sessionId, targetInfo } = msg.params;
           this.sessions.set(targetInfo.targetId, sessionId);
         }
+        if (msg.method === 'Page.javascriptDialogOpening') {
+          // Auto-accept any unexpected native alert/confirm popups to prevent blocking
+          this.call('Page.handleJavaScriptDialog', { accept: true }, msg.sessionId).catch(() => {});
+        }
         if (msg.id && this.pending.has(msg.id)) {
           const { resolve, reject, timer } = this.pending.get(msg.id);
           clearTimeout(timer);
@@ -105,6 +109,9 @@ export class CDPClient {
     if (!this.sessions.has(targetId)) {
       const resp = await this.call('Target.attachToTarget', { targetId, flatten: true });
       this.sessions.set(targetId, resp.sessionId);
+      try {
+        await this.call('Page.enable', {}, resp.sessionId);
+      } catch {}
     }
     return this.sessions.get(targetId);
   }
@@ -126,7 +133,7 @@ export class CDPClient {
 
   async screenshot(targetId, outputPath, options = {}) {
     const sid = await this.session(targetId);
-    const params = { format: 'png', ...options };
+    const params = { format: 'png', captureBeyondViewport: true, ...options };
     const resp = await this.call('Page.captureScreenshot', params, sid, 20000);
     const buffer = Buffer.from(resp.data, 'base64');
     await writeFile(outputPath, buffer);
@@ -158,5 +165,58 @@ export class CDPClient {
     try {
       this.ws.close();
     } catch {}
+  }
+}
+
+export class CDPProxyClient {
+  constructor(baseUrl = 'http://127.0.0.1:3456') {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+  }
+
+  static async isAvailable(baseUrl = 'http://127.0.0.1:3456') {
+    try {
+      const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(1500) }).then(r => r.json());
+      return res && res.status === 'ok' && res.connected;
+    } catch {
+      return false;
+    }
+  }
+
+  async targets() {
+    const res = await fetch(`${this.baseUrl}/targets`).then(r => r.json());
+    return (res || []).filter(t => t.type === 'page');
+  }
+
+  async evaluate(targetId, expression) {
+    const res = await fetch(`${this.baseUrl}/eval?target=${encodeURIComponent(targetId)}`, {
+      method: 'POST',
+      body: expression
+    }).then(r => r.json());
+    if (res && res.error) throw new Error(res.error);
+    return res ? res.value : undefined;
+  }
+
+  async screenshot(targetId, outputPath) {
+    const res = await fetch(`${this.baseUrl}/screenshot?target=${encodeURIComponent(targetId)}&file=${encodeURIComponent(outputPath)}`).then(r => r.json());
+    if (res && res.error) throw new Error(res.error);
+    return res;
+  }
+
+  async createTarget(url = 'about:blank') {
+    const res = await fetch(`${this.baseUrl}/new`, {
+      method: 'POST',
+      body: url
+    }).then(r => r.json());
+    if (res && res.error) throw new Error(res.error);
+    return res.targetId;
+  }
+
+  async closeTarget(targetId) {
+    const res = await fetch(`${this.baseUrl}/close?target=${encodeURIComponent(targetId)}`).then(r => r.json());
+    return res;
+  }
+
+  close() {
+    // No-op for HTTP proxy
   }
 }

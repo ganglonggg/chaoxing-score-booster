@@ -24,6 +24,8 @@ export async function findChromeBinary(explicitPath) {
     candidates = [
       '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
       '/Applications/Chromium.app/Contents/MacOS/Chromium'
     ];
   } else if (platform === 'win32') {
@@ -34,11 +36,22 @@ export async function findChromeBinary(explicitPath) {
       join(local, 'Google/Chrome/Application/chrome.exe'),
       join(prog, 'Google/Chrome/Application/chrome.exe'),
       join(prog86, 'Google/Chrome/Application/chrome.exe'),
+      join(prog86, 'Microsoft/Edge/Application/msedge.exe'),
+      join(prog, 'Microsoft/Edge/Application/msedge.exe'),
+      join(local, 'Microsoft/Edge/Application/msedge.exe'),
       join(local, 'Chromium/Application/chrome.exe')
     ];
   } else {
     // Linux
-    const names = ['google-chrome-stable', 'google-chrome', 'chromium', 'chromium-browser'];
+    const names = [
+      'google-chrome-stable',
+      'google-chrome',
+      'microsoft-edge-stable',
+      'microsoft-edge',
+      'brave-browser',
+      'chromium',
+      'chromium-browser'
+    ];
     for (const name of names) {
       try {
         const out = execFileSync('which', [name], { encoding: 'utf8' }).trim();
@@ -60,11 +73,22 @@ export async function findChromeBinary(explicitPath) {
 
 export async function connectViaProfile(stateDir) {
   const activePortFile = join(stateDir, 'chrome-profile', 'DevToolsActivePort');
-  const content = (await readFile(activePortFile, 'utf8')).trim().split('\n');
-  const port = Number(content[0]);
-  const wsPath = content[1] || '';
-  const wsUrl = `ws://127.0.0.1:${port}${wsPath}`;
-  return CDPClient.connect(wsUrl);
+  try {
+    const content = (await readFile(activePortFile, 'utf8')).trim().split('\n');
+    const port = Number(content[0]);
+    const wsPath = content[1] || '';
+    const wsUrl = `ws://127.0.0.1:${port}${wsPath}`;
+    return await CDPClient.connect(wsUrl);
+  } catch (err) {
+    // If not found in profile, try checking if 127.0.0.1:9222 has active Chrome
+    try {
+      const resp = await fetch('http://127.0.0.1:9222/json/version').then(r => r.json());
+      if (resp && resp.webSocketDebuggerUrl) {
+        return await CDPClient.connect(resp.webSocketDebuggerUrl);
+      }
+    } catch {}
+    throw err;
+  }
 }
 
 export async function launchChrome({
