@@ -23,19 +23,23 @@
 
 ---
 
-## 安装方法
+## 用户极简三步法（开箱即用）
 
-直接克隆本仓库到你的 Agent Skill 目录：
+换新电脑后，无需复杂配置，只需以下三步：
 
-### 安装至 Codex
-```bash
-git clone https://github.com/ganglonggg/chaoxing-score-booster.git ~/.codex/skills/chaoxing-score-booster
-```
+1. **第一步：安装技能（直接对话安装）**
+   直接在 WorkBuddy / Agent 聊天框中发送：
+   > `请安装这个技能：https://github.com/ganglonggg/chaoxing-score-booster.git`
+   *(亦可手动在终端克隆至技能目录：`git clone https://github.com/ganglonggg/chaoxing-score-booster.git ~/.codex/skills/chaoxing-score-booster`)*
 
-### 安装至 Antigravity / Gemini
-```bash
-git clone https://github.com/ganglonggg/chaoxing-score-booster.git ~/.gemini/config/skills/chaoxing-score-booster
-```
+2. **第二步：发送刷分指令**
+   在聊天框中直接发送你的超星课程广场完整 URL：
+   > `https://tsjy.chaoxing.com/plaza/?courseId=... 帮我刷到800分`
+
+3. **第三步：扫码登录一次（仅需5秒）**
+   - Agent 收到指令后会自动弹出一个**专属的 Google Chrome 窗口**（自带自动化调试通道）。
+   - 用户只需在**该自动弹出的 Chrome 窗口**中扫码或输入手机号登录超星账号。
+   - 登录成功进入广场后，后续全由 Agent 自动定位测验、看图推导、提交并核对累计积分至 800 分，自动生成确认截图并安全退出！
 
 ---
 

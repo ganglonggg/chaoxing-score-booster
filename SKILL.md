@@ -25,6 +25,21 @@ description: 在 tsjy.chaoxing.com 超星学习广场（形势与政策/通识�
 
 ---
 
+## 用户极简三步操作指引（换新电脑/新环境）
+
+用户在任何新电脑上配合 WorkBuddy 或其他 AI Agent 使用本 Skill，仅需以下极简三步：
+
+1. **第一步（安装 Skill）**：直接在 WorkBuddy 聊天框发送：
+   > `请安装这个技能：https://github.com/ganglonggg/chaoxing-score-booster.git`
+2. **第二步（发起刷分任务）**：安装完成后，直接发送课程广场链接：
+   > `https://tsjy.chaoxing.com/plaza/?courseId=... 帮我刷到800分`
+3. **第三步（扫码登录一次）**：
+   - Agent 会自动拉起一个**崭新的专属 Google Chrome 窗口**（自带独立调试端口与隔离配置）。
+   - 用户只需在**该自动弹出的 Chrome 窗口**中扫码或输入手机号登录超星一次。
+   - 登录成功进入广场后，后续全由 Agent 自动做题流转，直达 800 分并输出成果截图，全程无需人工干预！
+
+---
+
 ## Agent 操作标准流程
 
 Agent 在接收到用户“刷到 800 分”的指令时，按以下 4 步执行：
