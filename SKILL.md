@@ -27,6 +27,8 @@ description: 在 tsjy.chaoxing.com 超星学习广场（形势与政策/通识�
 
 ## 用户极简三步操作指引（换新电脑/新环境）
 
+>  **使用前准备（仅需一次）**：确保电脑已装有 **Google Chrome** 和 **Node.js 22+**（从官网直接下载安装即可，零额外 npm 配置）。
+
 用户在任何新电脑上配合 WorkBuddy 或其他 AI Agent 使用本 Skill，仅需以下极简三步：
 
 1. **第一步（安装 Skill）**：直接在 WorkBuddy 聊天框发送：
