@@ -1,6 +1,6 @@
-# 超星课程学习广场极速答题刷分 Skill (`chaoxing-score-booster`)
+# 超星课程学习广场自动化学习与自测套件 (`chaoxing-score-booster`)
 
-一个独立且通用的 AI Agent Skill：在 `tsjy.chaoxing.com` 超星学习广场（形势与政策/通识课），自动启动独立 Google Chrome 窗口，自适应新电脑、新 Agent 与新账号，定位章节测验并利用题目视觉快照规避字体混淆，高效答题提交并核对累计积分，持续刷分直至达到目标 800 分后干净收尾。
+一个独立且通用的 AI Agent Skill：在 `tsjy.chaoxing.com` 超星学习广场（形势与政策/通识课），自动启动独立 Google Chrome 窗口，自适应新电脑、新 Agent 与新账号，定位章节测验并利用题目视觉快照规避字体混淆，完成交互提交并核对累计积分至目标值（默认800分）后干净收尾。
 ---
 
 ## 核心设计特性
@@ -10,7 +10,7 @@
    - 基于 Node.js 22+ 原生标准库（`fetch` + 原生 `WebSocket`），**零任何第三方 npm 依赖**，跨机器无需 `npm install`。
 2. **跨 Agent 通用性**：
    - 包含完整的 [SKILL.md](SKILL.md) 提示词规范与标准化 CLI 工具链（`init` / `next-quiz` / `step` / `status` / `finish`）。
-   - 兼容 Antigravity、Codex、Claude 3.5、GPT-4o、Cursor 等各类主流 Agent。
+   - 兼容 Antigravity、Codex、Claude 3.5、GPT-4o、Cursor、WorkBuddy 等各类主流 Agent。
 3. **新账号完全隔离**：
    - 动态从 URL 和 DOM 提取 `courseId`, `classId`, `personId`, `userId`，不硬编码任何个人信息。
    - 使用独立的 `--state-dir`（独立 Chrome 用户配置目录），与日常个人浏览器互不干扰，换账号只需换个状态目录。
@@ -34,9 +34,9 @@
    > `请安装这个技能：https://github.com/ganglonggg/chaoxing-score-booster.git`
    *(亦可手动在终端克隆至技能目录：`git clone https://github.com/ganglonggg/chaoxing-score-booster.git ~/.codex/skills/chaoxing-score-booster`)*
 
-2. **第二步：发送刷分指令**
+2. **第二步：发送执行指令**
    在聊天框中直接发送你的超星课程广场完整 URL：
-   > `https://tsjy.chaoxing.com/plaza/?courseId=... 帮我刷到800分`
+   > `https://tsjy.chaoxing.com/plaza/?courseId=... 运行自动化学习自测任务，目标800分`
 
 3. **第三步：扫码登录一次（仅需5秒）**
    - Agent 收到指令后会自动弹出一个**专属的 Google Chrome 窗口**（自带自动化调试通道）。
