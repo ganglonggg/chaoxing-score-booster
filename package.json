@@ -1,0 +1,19 @@
+{
+  "name": "chaoxing-score-booster",
+  "version": "1.0.0",
+  "description": "超星形势与政策/通识课学习广场章节测验极速刷分 Skill",
+  "type": "module",
+  "main": "scripts/booster.mjs",
+  "scripts": {
+    "doctor": "node scripts/chrome-launcher.mjs doctor"
+  },
+  "keywords": [
+    "chaoxing",
+    "agent-skill",
+    "automation",
+    "cdp",
+    "study"
+  ],
+  "author": "ganglong",
+  "license": "MIT"
+}
