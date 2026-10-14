@@ -103,13 +103,27 @@ export class QuizBooster {
     // Check if user is logged in
     await sleep(2000);
     const pages = await cdp.targets();
-    const plazaTab = pages.find(p => p.url.includes('/plaza/')) || pages.find(p => p.targetId === targetId);
+    let plazaTab = pages.find(p => p.url.includes('/plaza/')) || pages.find(p => p.targetId === targetId);
+
+    // If not on plaza yet, wait up to 120s for user to log in and enter plaza
+    if (!plazaTab || !plazaTab.url.includes('/plaza/')) {
+      process.stdout.write('【提示】检测到尚未进入学习广场。请在已弹出的 Chrome 窗口中扫码/手机号登录并进入课程（自动等待中，无需重新运行）...\n');
+      for (let i = 0; i < 60; i++) {
+        await sleep(2000);
+        const updatedPages = await cdp.targets();
+        const found = updatedPages.find(p => p.url.includes('/plaza/'));
+        if (found) {
+          plazaTab = found;
+          break;
+        }
+      }
+    }
 
     if (!plazaTab || !plazaTab.url.includes('/plaza/')) {
       await this.saveSession({ initialUrl: url, targetScore: this.targetScore });
       return {
         status: 'WAITING_FOR_LOGIN',
-        message: '请在打开的 Chrome 窗口中完成超星账号登录，并进入课程学习广场页面。登录完成后请再次执行 init。',
+        message: '等待登录超时。请在已打开的 Chrome 窗口中完成超星账号登录并进入课程学习广场，然后再次执行 init。',
         currentUrl: plazaTab?.url || url
       };
     }
@@ -443,8 +457,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 
   try {
     if (cmd === 'init') {
-      const url = getOpt('--url');
-      if (!url) throw new Error('--url <PLAZA_URL> is required for init');
+      const url = getOpt('--url', 'https://tsjy.chaoxing.com/');
       const res = await booster.init(url, getOpt('--chrome'));
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === 'status') {
