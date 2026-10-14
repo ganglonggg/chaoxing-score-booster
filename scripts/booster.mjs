@@ -142,6 +142,7 @@ export class QuizBooster {
     })()`);
 
     const score = await this.getScore(plazaTab.targetId);
+    const categories = await this.getCourseCategories(plazaTab.targetId);
 
     await this.saveSession({
       plazaTargetId: plazaTab.targetId,
@@ -150,6 +151,9 @@ export class QuizBooster {
       classId: meta.classId,
       personId: meta.personId,
       userId: meta.userId,
+      categories,
+      currentCategoryIndex: 0,
+      visitedChapters: [],
       targetScore: this.targetScore
     });
 
@@ -157,8 +161,146 @@ export class QuizBooster {
       status: 'READY',
       course: meta,
       score,
+      categoriesCount: categories.length,
+      categories: categories.map(c => c.title),
       targetScore: this.targetScore
     };
+  }
+
+  async getCourseCategories(plazaTargetId) {
+    if (!plazaTargetId) {
+      const { plaza } = await this.getTabs();
+      if (!plaza) throw new Error('Plaza tab not found');
+      plazaTargetId = plaza.targetId;
+    }
+
+    const categories = await this.cdp.evaluate(plazaTargetId, `(async () => {
+      // 1. Try classify-list
+      try {
+        const html = await fetch('/plaza/classify-list' + location.search).then(r => r.text());
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const catLinks = Array.from(doc.querySelectorAll('a[href*="classifyId="]'));
+        const cats = [];
+        const seen = new Set();
+        for (const a of catLinks) {
+          const u = new URL(a.href);
+          const cid = u.searchParams.get('classifyId');
+          if (cid && !seen.has(cid)) {
+            seen.add(cid);
+            cats.push({ classifyId: cid, title: a.innerText.trim() || cid });
+          }
+        }
+        if (cats.length > 0) return cats;
+      } catch {}
+
+      // 2. Fallback: categories directly on plaza homepage
+      const homeLinks = Array.from(document.querySelectorAll('a[href*="classifyId="]'));
+      const cats = [];
+      const seen = new Set();
+      for (const a of homeLinks) {
+        const u = new URL(a.href);
+        const cid = u.searchParams.get('classifyId');
+        if (cid && !seen.has(cid)) {
+          seen.add(cid);
+          cats.push({ classifyId: cid, title: a.innerText.trim() || cid });
+        }
+      }
+      return cats;
+    })()`);
+
+    return (categories && categories.length > 0) ? categories : [{ classifyId: null, title: '默认课程' }];
+  }
+
+  async getCategoryKnowledgeList(classifyId, plazaTargetId) {
+    if (!plazaTargetId) {
+      const { plaza } = await this.getTabs();
+      if (!plaza) throw new Error('Plaza tab not found');
+      plazaTargetId = plaza.targetId;
+    }
+
+    return this.cdp.evaluate(plazaTargetId, `(async () => {
+      if (!${JSON.stringify(classifyId)}) {
+        const matches = [...document.body.innerHTML.matchAll(/goKnowledge\\(\\s*\\d+\\s*,\\s*(\\d+)/g)].map(m => m[1]);
+        return [...new Set(matches)];
+      }
+
+      try {
+        const param = new URLSearchParams({
+          classifyId: ${JSON.stringify(classifyId)},
+          element: '0',
+          point: '0',
+          name: '',
+          page: '1',
+          pageSize: '200'
+        });
+        const html = await fetch('/plaza/knowledge-list' + location.search + '&' + param.toString()).then(r => r.text());
+        const matches = [...html.matchAll(/goKnowledge\\(\\s*\\d+\\s*,\\s*(\\d+)/g)].map(m => m[1]);
+        return [...new Set(matches)];
+      } catch {
+        return [];
+      }
+    })()`);
+  }
+
+  async openStudyChapter(knowledgeId) {
+    const { plaza } = await this.getTabs();
+    if (!plaza) throw new Error('Plaza tab not found');
+    const session = await this.loadSession();
+    const courseId = session.courseId;
+    const classId = session.classId;
+
+    // 1. Get transfer URL via plaza session
+    const transferUrl = await this.cdp.evaluate(plaza.targetId, `(async () => {
+      try {
+        const u = new URL(location.href);
+        const cId = u.searchParams.get('courseId') || ${JSON.stringify(courseId)};
+        const clId = u.searchParams.get('classId') || ${JSON.stringify(classId)};
+        const res = await fetch('/plaza/user/' + cId + '/' + ${JSON.stringify(knowledgeId)} + '/modify-node?classId=' + clId).then(r => r.json());
+        if (res && res.data) {
+          const d = res.data;
+          if (d.mode === 'preview') {
+            return d.domain + '/nodedetailcontroller/visitnodedetail?knowledgeId=' + ${JSON.stringify(knowledgeId)} + '&courseId=' + cId;
+          }
+          const nodeUrl = d.domain + '/mycourse/studentstudy?chapterId=' + ${JSON.stringify(knowledgeId)} + '&courseId=' + cId + '&clazzid=' + d.classId + '&enc=' + d.enc + '&mooc2=1';
+          return d.domain + '/mycourse/transfer?moocId=' + cId + '&ut=s&clazzid=' + clId + '&refer=' + encodeURIComponent(nodeUrl);
+        }
+      } catch {}
+      return 'https://mooc1-1.chaoxing.com/nodedetailcontroller/visitnodedetail?knowledgeId=' + ${JSON.stringify(knowledgeId)} + '&courseId=' + ${JSON.stringify(courseId)};
+    })()`);
+
+    if (!transferUrl) {
+      throw new Error('Failed to obtain transfer URL for chapter ' + knowledgeId);
+    }
+
+    // 2. Reuse existing study tab or create a new one
+    const { pages, study } = await this.getTabs();
+    let studyTargetId;
+
+    if (study) {
+      studyTargetId = study.targetId;
+      await this.cdp.evaluate(studyTargetId, 'location.href = ' + JSON.stringify(transferUrl));
+    } else {
+      studyTargetId = await this.cdp.createTarget(transferUrl);
+    }
+
+    // 3. Enforce SINGLE study tab policy: close duplicates
+    const updated = await this.cdp.targets();
+    const studyTabs = updated.filter(p => p.url.includes('/mycourse/') || p.url.includes('/nodedetailcontroller/'));
+    for (const s of studyTabs) {
+      if (s.targetId !== studyTargetId) {
+        try { await this.cdp.closeTarget(s.targetId); } catch {}
+      }
+    }
+
+    // 4. Wait for study page to load
+    for (let i = 0; i < 40; i++) {
+      await sleep(500);
+      const loaded = await this.cdp.evaluate(studyTargetId, 'Boolean(document.querySelector("#mainid"))');
+      if (loaded) break;
+    }
+
+    await this.saveSession({ studyTargetId });
+    return studyTargetId;
   }
 
   async ensureSingleStudyTab() {
@@ -179,6 +321,19 @@ export class QuizBooster {
     }
 
     // Open first study tab from plaza
+    let session = await this.loadSession();
+    let categories = session.categories;
+    if (!categories || categories.length === 0) {
+      categories = await this.getCourseCategories(plaza.targetId);
+      await this.saveSession({ categories, currentCategoryIndex: 0 });
+    }
+    const currentCat = categories[session.currentCategoryIndex || 0] || categories[0];
+    const knowledges = await this.getCategoryKnowledgeList(currentCat.classifyId, plaza.targetId);
+    if (knowledges && knowledges.length > 0) {
+      return this.openStudyChapter(knowledges[0]);
+    }
+
+    // Fallback: click first link from plaza
     const opened = await this.cdp.evaluate(plaza.targetId, `(()=>{
       const firstA = [...document.querySelectorAll('a')].find(a => a.href && a.href.includes('goKnowledge'));
       if (firstA) { firstA.click(); return 'clicked goKnowledge'; }
@@ -200,16 +355,94 @@ export class QuizBooster {
     throw new Error('Failed to open study tab from plaza');
   }
 
+  async advanceChapter(studyTargetId) {
+    return this.cdp.evaluate(studyTargetId, `(()=>{
+      const nextBtn = document.getElementById('prevNextFocusNext');
+      if (nextBtn) { nextBtn.click(); return true; }
+      const tipPopup = document.getElementById('jobFinishTipFocus')?.parentElement;
+      const offeredA = tipPopup ? [...tipPopup.querySelectorAll('a')].find(e => e.innerText.trim() === '下一节') : null;
+      if (offeredA) { offeredA.click(); return true; }
+      return false;
+    })()`);
+  }
+
+  async advanceToNextChapter(studyTargetId) {
+    // 1. Try clicking "下一节" button within current module
+    const advanced = await this.advanceChapter(studyTargetId);
+    if (advanced) {
+      await sleep(1500);
+      return { success: true, method: 'next_button' };
+    }
+
+    // 2. "下一节" ended: find next unvisited chapter in current category or switch to next category
+    await this.loadSession();
+    let categories = this.session.categories;
+    if (!categories || categories.length === 0) {
+      const { plaza } = await this.getTabs();
+      categories = await this.getCourseCategories(plaza?.targetId);
+      await this.saveSession({ categories });
+    }
+
+    let catIndex = this.session.currentCategoryIndex !== undefined ? this.session.currentCategoryIndex : 0;
+    const visited = new Set(this.session.visitedChapters || []);
+
+    while (catIndex < categories.length) {
+      const cat = categories[catIndex];
+      const { plaza } = await this.getTabs();
+      const knowledges = await this.getCategoryKnowledgeList(cat.classifyId, plaza?.targetId);
+      const unvisited = knowledges.filter(kId => !visited.has(String(kId)));
+
+      if (unvisited.length > 0) {
+        const nextKId = unvisited[0];
+        await this.saveSession({ currentCategoryIndex: catIndex });
+        const newStudyId = await this.openStudyChapter(nextKId);
+        return {
+          success: true,
+          method: 'category_jump',
+          category: cat.title,
+          classifyId: cat.classifyId,
+          knowledgeId: nextKId,
+          studyTargetId: newStudyId
+        };
+      }
+
+      // Current category exhausted, step to next category
+      catIndex++;
+    }
+
+    return { success: false, method: 'exhausted' };
+  }
+
   async nextQuiz() {
-    const studyTargetId = await this.ensureSingleStudyTab();
+    let studyTargetId = await this.ensureSingleStudyTab();
+    await this.loadSession();
+    const visited = new Set(this.session.visitedChapters || []);
 
     // Loop until we find a chapter with an incomplete assessment
-    for (let attempt = 0; attempt < 50; attempt++) {
+    for (let attempt = 0; attempt < 80; attempt++) {
       // 1. Wait for chapter header
-      for (let i = 0; i < 20; i++) {
-        const hasHeader = await this.cdp.evaluate(studyTargetId, `Boolean(document.querySelector('#mainid'))`);
-        if (hasHeader) break;
+      let chapterTitle = null;
+      let chapterId = null;
+      for (let i = 0; i < 25; i++) {
+        const headerInfo = await this.cdp.evaluate(studyTargetId, `(()=>{
+          const header = document.querySelector('#mainid');
+          if (!header) return null;
+          return {
+            title: header.innerText.split('\\n')[0].trim(),
+            chapterId: new URL(location.href).searchParams.get('chapterId')
+          };
+        })()`);
+        if (headerInfo) {
+          chapterTitle = headerInfo.title;
+          chapterId = headerInfo.chapterId;
+          break;
+        }
         await sleep(300);
+      }
+
+      if (chapterId) {
+        visited.add(String(chapterId));
+        await this.saveSession({ visitedChapters: [...visited] });
       }
 
       // 2. Check if this chapter has an assessment tab
@@ -267,8 +500,8 @@ export class QuizBooster {
 
           return {
             status: 'QUIZ_READY',
-            chapterId: quizStatus.chapterId,
-            title: quizStatus.title,
+            chapterId: quizStatus.chapterId || chapterId,
+            title: quizStatus.title || chapterTitle,
             questionCount: quizStatus.questionCount,
             questions,
             screenshot: screenshotPath
@@ -276,26 +509,21 @@ export class QuizBooster {
         }
       }
 
-      // No incomplete quiz on this chapter, advance to next chapter
-      const advanced = await this.advanceChapter(studyTargetId);
-      if (!advanced) {
-        return { status: 'NO_MORE_CHAPTERS', message: 'All chapters scanned or reach end of course.' };
+      // 3. No incomplete quiz on this chapter, advance to next chapter (or next category!)
+      const adv = await this.advanceToNextChapter(studyTargetId);
+      if (!adv.success) {
+        return {
+          status: 'NO_MORE_CHAPTERS',
+          message: 'All course categories and chapters scanned.'
+        };
+      }
+      if (adv.studyTargetId) {
+        studyTargetId = adv.studyTargetId;
       }
       await sleep(1500);
     }
 
     return { status: 'TIMEOUT', message: 'Exceeded maximum chapter scanning attempts' };
-  }
-
-  async advanceChapter(studyTargetId) {
-    return this.cdp.evaluate(studyTargetId, `(()=>{
-      const nextBtn = document.getElementById('prevNextFocusNext');
-      if (nextBtn) { nextBtn.click(); return true; }
-      const tipPopup = document.getElementById('jobFinishTipFocus')?.parentElement;
-      const offeredA = tipPopup ? [...tipPopup.querySelectorAll('a')].find(e => e.innerText.trim() === '下一节') : null;
-      if (offeredA) { offeredA.click(); return true; }
-      return false;
-    })()`);
   }
 
   async submitQuiz(answers) {
@@ -409,7 +637,7 @@ export class QuizBooster {
     // 4. Advance to next quiz
     const { study } = await this.getTabs();
     if (study) {
-      await this.advanceChapter(study.targetId);
+      await this.advanceToNextChapter(study.targetId);
       await sleep(1500);
     }
 
