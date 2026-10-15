@@ -109,7 +109,7 @@ export class QuizBooster {
   }
 
 
-  async init(url, chromePath = null) {
+  async init(url, chromePath = null, courseKeyword = null) {
     await mkdir(this.stateDir, { recursive: true });
 
     let cdp, targetId;
@@ -140,24 +140,68 @@ export class QuizBooster {
 
     // If not on plaza yet, wait up to 120s for user to log in and enter plaza
     if (!plazaTab || !plazaTab.url.includes('/plaza/')) {
-      process.stdout.write('【提示】检测到尚未进入学习广场。请在已弹出的 Chrome 窗口中扫码/手机号登录（登录后自动捕获课程，无需手动复制链接）...\n');
+      process.stdout.write('【提示】检测到尚未进入学习广场。请在已弹出的 Chrome 窗口中扫码/手机号登录...\n');
+      let multiCourseNotified = false;
+
       for (let i = 0; i < 60; i++) {
         await sleep(2000);
         const updatedPages = await cdp.targets();
         let found = updatedPages.find(p => p.url.includes('/plaza/'));
+
         if (!found) {
-          // If user logged in and is on course list, try auto-clicking the first course card into plaza
+          // If user logged in and is on course list, check available courses
           for (const p of updatedPages) {
-            if (p.url.includes('tsjy.chaoxing.com')) {
+            if (p.url.includes('tsjy.chaoxing.com') && !p.url.includes('/plaza/')) {
               try {
-                await cdp.evaluate(p.targetId, `(()=>{
-                  const a = document.querySelector('a[href*="/plaza/"], .course-item a, .course_item a, a[href*="courseId"]');
-                  if (a) a.click();
+                const courses = await cdp.evaluate(p.targetId, `(()=>{
+                  const links = Array.from(document.querySelectorAll('a[href*="/plaza/"], a[href*="courseId"], .course-item, .course_item'));
+                  const items = [];
+                  const seen = new Set();
+                  for (const el of links) {
+                    const a = el.tagName === 'A' ? el : el.querySelector('a');
+                    const text = (el.innerText || '').trim();
+                    if (a && a.href && text && !seen.has(text)) {
+                      seen.add(text);
+                      items.push({ title: text.split('\\n')[0].trim(), href: a.href });
+                    }
+                  }
+                  return items;
                 })()`);
+
+                if (courses && courses.length > 0) {
+                  if (courseKeyword) {
+                    const matched = courses.find(c => c.title.includes(courseKeyword));
+                    if (matched) {
+                      process.stdout.write(`【自动匹配】检测到与 "${courseKeyword}" 匹配的课程《${matched.title}》，正在自动进入...\n`);
+                      await cdp.evaluate(p.targetId, `(()=>{
+                        const target = ${JSON.stringify(matched.title)};
+                        const allA = Array.from(document.querySelectorAll('a'));
+                        const targetA = allA.find(a => (a.innerText || a.parentElement?.innerText || '').includes(target));
+                        if (targetA) targetA.click();
+                      })()`);
+                      break;
+                    }
+                  } else if (courses.length === 1) {
+                    // Only 1 course, auto-click into plaza
+                    await cdp.evaluate(p.targetId, `(()=>{
+                      const a = document.querySelector('a[href*="/plaza/"], .course-item a, .course_item a');
+                      if (a) a.click();
+                    })()`);
+                    break;
+                  } else if (!multiCourseNotified) {
+                    multiCourseNotified = true;
+                    process.stdout.write(
+                      `【检测到多门通识课】\n` +
+                      courses.map((c, idx) => `  ${idx + 1}. ${c.title}`).join('\n') +
+                      `\n👉 请在弹出的 Chrome 窗口中直接点击您想刷的那门课，或使用 --course <关键词> 自动匹配！\n`
+                    );
+                  }
+                }
               } catch {}
             }
           }
         }
+
         found = updatedPages.find(p => p.url.includes('/plaza/'));
         if (found) {
           plazaTab = found;
@@ -768,7 +812,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     if (cmd === 'init') {
       const url = getOpt('--url', 'https://tsjy.chaoxing.com/');
-      const res = await booster.init(url, getOpt('--chrome'));
+      const course = getOpt('--course', null);
+      const res = await booster.init(url, getOpt('--chrome'), course);
       console.log(JSON.stringify(res, null, 2));
     } else if (cmd === 'status') {
       await booster.connect();
@@ -800,7 +845,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       console.log(JSON.stringify(res, null, 2));
     } else {
       console.log('Commands:');
-      console.log('  init --url <PLAZA_URL> [--state-dir ./state] [--target 800]');
+      console.log('  init [--url <URL>] [--course <KEYWORD>] [--state-dir ./state] [--target 800]');
       console.log('  status [--state-dir ./state]');
       console.log('  next-quiz [--state-dir ./state]');
       console.log('  submit "<answers_json>" [--state-dir ./state]');
