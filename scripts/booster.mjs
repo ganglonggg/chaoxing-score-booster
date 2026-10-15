@@ -140,11 +140,25 @@ export class QuizBooster {
 
     // If not on plaza yet, wait up to 120s for user to log in and enter plaza
     if (!plazaTab || !plazaTab.url.includes('/plaza/')) {
-      process.stdout.write('【提示】检测到尚未进入学习广场。请在已弹出的 Chrome 窗口中扫码/手机号登录并进入课程（自动等待中，无需重新运行）...\n');
+      process.stdout.write('【提示】检测到尚未进入学习广场。请在已弹出的 Chrome 窗口中扫码/手机号登录（登录后自动捕获课程，无需手动复制链接）...\n');
       for (let i = 0; i < 60; i++) {
         await sleep(2000);
         const updatedPages = await cdp.targets();
-        const found = updatedPages.find(p => p.url.includes('/plaza/'));
+        let found = updatedPages.find(p => p.url.includes('/plaza/'));
+        if (!found) {
+          // If user logged in and is on course list, try auto-clicking the first course card into plaza
+          for (const p of updatedPages) {
+            if (p.url.includes('tsjy.chaoxing.com')) {
+              try {
+                await cdp.evaluate(p.targetId, `(()=>{
+                  const a = document.querySelector('a[href*="/plaza/"], .course-item a, .course_item a, a[href*="courseId"]');
+                  if (a) a.click();
+                })()`);
+              } catch {}
+            }
+          }
+        }
+        found = updatedPages.find(p => p.url.includes('/plaza/'));
         if (found) {
           plazaTab = found;
           break;

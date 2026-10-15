@@ -37,14 +37,15 @@
    > `请安装这个技能：https://github.com/ganglonggg/chaoxing-score-booster.git`
    *(亦可手动在终端克隆至技能目录：`git clone https://github.com/ganglonggg/chaoxing-score-booster.git ~/.codex/skills/chaoxing-score-booster`)*
 
-2. **第二步：发送执行指令**
-   在聊天框中直接发送你的超星课程广场完整 URL：
-   > `https://tsjy.chaoxing.com/plaza/?courseId=... 运行自动化学习自测任务，目标800分`
+2. **第二步：发送执行指令（无需手动复制复杂链接）**
+   在聊天框中直接发送一句话即可：
+   > `帮我把超星通识课自测刷到800分`
+   *(若账号下选了多门课且想精准指定，也可以直接附带课程链接：`https://tsjy.chaoxing.com/plaza/?courseId=... 目标800分`)*
 
 3. **第三步：扫码登录一次（仅需5秒）**
-   - Agent 收到指令后会自动弹出一个**专属的 Google Chrome 窗口**（自带自动化调试通道）。
+   - Agent 收到指令后会自动弹出一个**专属的 Google Chrome 窗口**（默认打开超星通识课主页）。
    - 用户只需在**该自动弹出的 Chrome 窗口**中扫码或输入手机号登录超星账号。
-   - 登录成功进入广场后，后续全由 Agent 自动定位测验、看图推导、提交并核对累计积分至 800 分，自动生成确认截图并安全退出！
+   - 登录成功后，脚本会自动捕获课程广场与元数据。后续全由 Agent 自动定位测验、看图推导、提交并核对累计积分至 800 分，自动生成确认截图并安全退出！全程无需人工干预！
 
 ---
 

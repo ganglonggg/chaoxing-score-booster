@@ -42,10 +42,11 @@ description: 在 tsjy.chaoxing.com 超星学习广场（通识课/形势与政�
 
 1. **第一步（安装 Skill）**：直接在 WorkBuddy 聊天框发送：
    > `请安装这个技能：https://github.com/ganglonggg/chaoxing-score-booster.git`
-2. **第二步（发起学习进度同步）**：安装完成后，直接发送课程广场链接：
-   > `https://tsjy.chaoxing.com/plaza/?courseId=... 运行自动化学习自测任务，目标800分`
-3. **第三步（扫码登录一次）**：
-   - Agent 会自动拉起一个**崭新的专属 Google Chrome 窗口**（自带独立调试端口与隔离配置）。
+2. **第二步（发起刷分任务）**：**无需手动复制任何复杂长链接**，直接在聊天框发送：
+   > `帮我把超星通识课自测刷到800分`
+   *(只有当账号下同时选了多门课想精准指定某门课时，才可附带该门课的广场链接)*
+3. **第三步（扫码登录一次，仅需5秒）**：
+   - Agent 会自动拉起一个**专属的 Google Chrome 窗口**（默认打开超星通识课平台）。
    - 用户只需在**该自动弹出的 Chrome 窗口**中扫码或输入手机号登录超星一次。
    - 登录成功进入广场后，后续全由 Agent 自动调度脚本流转，直达 800 分并输出成果截图，全程无需人工干预！
 
@@ -57,14 +58,17 @@ Agent 在接收到用户“运行自动化学习自测，目标800分”的指�
 
 ### 第一步：启动浏览器与环境初始化
 
-获取用户的课程广场 URL（例如包含 `courseId`, `classId`, `personId`, `userId` 的 `https://tsjy.chaoxing.com/plaza/?...`）。
-在工作目录下运行初始化命令：
+在工作目录下运行初始化命令（若用户未提供 URL，直接省略 `--url`，脚本默认打开超星通识课主页并在登录后自动捕获课程）：
 
 ```bash
+# 场景 A：用户未给 URL（推荐最简方式，脚本自动拉起主页并捕获课程）
+node <SKILL_DIR>/scripts/booster.mjs init --state-dir ./state --target 800
+
+# 场景 B：用户附带了具体课程广场 URL
 node <SKILL_DIR>/scripts/booster.mjs init --url '<COURSE_PLAZA_URL>' --state-dir ./state --target 800
 ```
 
-- 若返回 `WAITING_FOR_LOGIN`：告知用户在自动弹出的 Chrome 窗口中完成登录，进入课程广场后，再次运行上述 `init` 命令。
+- 脚本会自动检测 Chrome 并在用户登录后自动捕获课程广场与元数据。
 - 若返回 `READY`：初始化成功，终端会输出当前累计积分及课程元数据。
 
 ---
