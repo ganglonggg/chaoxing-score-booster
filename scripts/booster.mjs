@@ -843,6 +843,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       await booster.connect();
       const res = await booster.finish();
       console.log(JSON.stringify(res, null, 2));
+    } else if (cmd === 'auto-fast') {
+      const { runFastBooster } = await import('./fast-runner.mjs');
+      const res = await runFastBooster({ stateDir, target: targetScore, onProgress: console.log });
+      console.log(JSON.stringify(res, null, 2));
     } else {
       console.log('Commands:');
       console.log('  init [--url <URL>] [--course <KEYWORD>] [--state-dir ./state] [--target 800]');
@@ -850,6 +854,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       console.log('  next-quiz [--state-dir ./state]');
       console.log('  submit "<answers_json>" [--state-dir ./state]');
       console.log('  step "<answers_json>" [--state-dir ./state]');
+      console.log('  auto-fast [--state-dir ./state] [--target 800]');
       console.log('  finish [--state-dir ./state]');
     }
   } catch (err) {

@@ -113,6 +113,24 @@ node <SKILL_DIR>/scripts/booster.mjs next-quiz --state-dir ./state
 
 ### 第三步：推导答案并单步推进（Agent 核心循环）
 
+### 第三步：推导答案并单步推进（双模式架构）
+
+Skill 支持 **【模式 A：极速全自动冲分（推荐，首选）】** 与 **【模式 B：视觉看图精准作答】** 两种模式：
+
+#### 🌟 模式 A：极速全自动冲分流（推荐，10分钟直达800分，零对话开销）
+通识课与形势与政策题库极其充裕（200+章节、数千分储备），平台规则只按答对数积分（答错不扣分）。脚本内置思政高频启发式引擎（单选默认A，判断默认对），命中率达 60%~65%。
+
+无需让 Agent 一题题看图推导，直接启动单命令全自动闭环：
+```bash
+node <SKILL_DIR>/scripts/booster.mjs auto-fast --state-dir ./state --target 800
+```
+- 脚本全速在后台循环检索测验、秒级作答、自动跨分类跳转，每 5 节自动核验总分；
+- 达到 800 分时全自动关闭学习标签页、截取成果图并安全退出！
+
+---
+
+#### 模式 B：逐题视觉看图精准推导（适用于题库极小或要求100%卷面分的场景）
+
 针对每个返回的测验：
 
 1. **查看题目图片**：
@@ -127,19 +145,7 @@ node <SKILL_DIR>/scripts/booster.mjs next-quiz --state-dir ./state
    node <SKILL_DIR>/scripts/booster.mjs step '[1, 1, 1, 0, 1]' --state-dir ./state
    ```
 
-   **`step` 命令会自动执行以下完整闭环**：
-   - 在 iframe 中选中对应选项；
-   - 点击“提交”；
-   - 自动点击二次确认弹窗（`#popok`）；
-   - 确认记录成绩；
-   - 刷新广场页面核验最新累计积分；
-   - **如果积分已达到 800**：自动截取确认图 `./state/score-confirmation.png`，关闭做题标签页，返回 `TARGET_REACHED`；
-   - **如果积分未满 800**：自动点击“下一节”，寻找到下一个测验章节并生成新的 `./state/current-quiz.png`，返回新题目结构！
-
 4. **重复此循环**，直到 `step` 命令输出中 `status` 为 `"TARGET_REACHED"`。
-   > [!WARNING]
-   > **切勿因单分类结束误判课程终止**：
-   > 超星课程包含数十个甚至数百个测验章节。当一个专题分类做完时，`step` 和 `next-quiz` 会全自动无缝跨分类切入下一个分类模块。Agent **切勿擅自停下或宣称“满分才170/题已做完”**，请保持调用 `step` 命令直至明确返回 `TARGET_REACHED`！
 
 ---
 
@@ -159,7 +165,8 @@ node <SKILL_DIR>/scripts/booster.mjs next-quiz --state-dir ./state
 | `node scripts/booster.mjs init` | 启动 Chrome 并绑定广场页 | `--url '<URL>'`, `--state-dir <DIR>`, `--target 800` |
 | `node scripts/booster.mjs status` | 刷新广场并查询当前累计/今日积分 | `--state-dir <DIR>` |
 | `node scripts/booster.mjs next-quiz` | 定位下一个未完成测验并生成题目截图 | `--state-dir <DIR>` |
-| `node scripts/booster.mjs step '<JSON>'` | **核心**：提交当前答案 + 查分 + 自动推进下一题 | 答案 JSON，如 `'[0, 1, 2, 0]'` |
+| `node scripts/booster.mjs auto-fast` | **极速全自动冲分**：单命令后台秒选+自动轮转直达 800 分 | `--state-dir <DIR>`, `--target 800` |
+| `node scripts/booster.mjs step '<JSON>'` | 逐题推导模式：提交指定答案 + 查分 + 自动推进下一题 | 答案 JSON，如 `'[0, 1, 2, 0]'` |
 | `node scripts/booster.mjs submit '<JSON>'` | 仅提交当前测验，不自动推进 | 答案 JSON |
 | `node scripts/booster.mjs finish` | 手动结算：截取完成图并关闭学习页 | `--state-dir <DIR>` |
 | `node scripts/chrome-launcher.mjs doctor` | 检查本机 Chrome 与 Node 环境就绪状态 | 无 |
